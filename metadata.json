@@ -1,0 +1,6 @@
+{
+  "name": "Mrvpn",
+  "description": "یک اپلیکیشن فیلترشکن زیبا و امن با قابلیت رمزگذاری کانفیگ‌ها، تست پینگ هوشمند، نمایش لحظه‌ای سرعت و مدیریت سرورها",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
