@@ -5,12 +5,14 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Refresh
@@ -36,7 +38,8 @@ fun SmartConfigPingWidget(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .background(Color(0xFF0F172A), shape = RoundedCornerShape(14.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(14.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(14.dp))
             .padding(14.dp)
             .testTag("ping_widget_container"),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -66,7 +69,7 @@ fun SmartConfigPingWidget(
             
             Text(
                 text = "رمزگذاری فوق‌امنیتی رشته کانفیگ با کلید اختصاصی",
-                color = Color.White.copy(alpha = 0.5f),
+                color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                 fontSize = 11.sp
             )
         }
@@ -77,7 +80,8 @@ fun SmartConfigPingWidget(
         if (connectionState == VpnConnectionState.CONNECTED) {
             Box(
                 modifier = Modifier
-                    .background(Color(0xFF1E293B), shape = RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.background, shape = RoundedCornerShape(10.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.1f), RoundedCornerShape(10.dp))
                     .clickable(enabled = !isPinging, onClick = onTestPingClick)
                     .padding(horizontal = 12.dp, vertical = 8.dp)
                     .testTag("ping_trigger_action_box"),
@@ -126,13 +130,13 @@ fun SmartConfigPingWidget(
                                     Icon(
                                         imageVector = Icons.Default.Refresh,
                                         contentDescription = "اجرای تست پینگ",
-                                        tint = Color.White.copy(alpha = 0.61f),
+                                        tint = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
                                         modifier = Modifier.size(15.dp)
                                     )
                                     Spacer(modifier = Modifier.width(3.dp))
                                     Text(
                                         text = "تست پینگ",
-                                        color = Color.White.copy(alpha = 0.82f),
+                                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
                                         fontSize = 12.sp,
                                         fontWeight = FontWeight.Medium
                                     )
@@ -146,13 +150,14 @@ fun SmartConfigPingWidget(
             // Disabled state when VPN is disconnected
             Box(
                 modifier = Modifier
-                    .background(Color(0xFF1E293B).copy(alpha = 0.5f), shape = RoundedCornerShape(10.dp))
+                    .background(MaterialTheme.colorScheme.background.copy(alpha = 0.5f), shape = RoundedCornerShape(10.dp))
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.05f), RoundedCornerShape(10.dp))
                     .padding(horizontal = 12.dp, vertical = 8.dp),
                 contentAlignment = Alignment.Center
             ) {
                 Text(
                     text = "آفلاین",
-                    color = Color.White.copy(alpha = 0.35f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.35f),
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Medium
                 )

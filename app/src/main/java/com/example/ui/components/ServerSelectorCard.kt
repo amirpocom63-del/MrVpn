@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.List
@@ -38,8 +39,8 @@ fun ServerSelectorCard(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 24.dp)
-            .background(Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(24.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
+            .background(MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(24.dp))
+            .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(24.dp))
             .padding(16.dp)
             .testTag("server_selector_card_container")
     ) {
@@ -60,7 +61,7 @@ fun ServerSelectorCard(
                 )
                 Text(
                     text = "انتخاب سرور تونلینگ",
-                    color = Color.White,
+                    color = MaterialTheme.colorScheme.onBackground,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.Bold
                 )
@@ -107,7 +108,7 @@ fun ServerSelectorCard(
             ) {
                 Text(
                     text = "سروری یافت نشد. از پنل مدیریت سرور اضافه کنید.",
-                    color = Color.White.copy(alpha = 0.5f),
+                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                     fontSize = 11.sp
                 )
             }
@@ -138,7 +139,7 @@ fun ServerSelectorCard(
                             Icon(
                                 imageVector = Icons.Default.CheckCircle,
                                 contentDescription = if (isSelected) "سرور فعال" else "سرور غیرفعال",
-                                tint = if (isSelected) CyberCyan else Color.White.copy(alpha = 0.15f),
+                                tint = if (isSelected) CyberCyan else MaterialTheme.colorScheme.onBackground.copy(alpha = 0.15f),
                                 modifier = Modifier.size(18.dp)
                             )
                             
@@ -147,7 +148,7 @@ fun ServerSelectorCard(
                             Column {
                                 Text(
                                     text = server.name,
-                                    color = if (isSelected) CyberCyan else Color.White,
+                                    color = if (isSelected) CyberCyan else MaterialTheme.colorScheme.onBackground,
                                     fontSize = 13.sp,
                                     fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Medium,
                                     maxLines = 1,
@@ -155,7 +156,7 @@ fun ServerSelectorCard(
                                 )
                                 Text(
                                     text = server.remarks,
-                                    color = Color.White.copy(alpha = 0.45f),
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
                                     fontSize = 10.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
@@ -165,7 +166,7 @@ fun ServerSelectorCard(
                     }
                     
                     if (index < servers.size - 1 && index < 2) {
-                        HorizontalDivider(color = Color.White.copy(alpha = 0.05f), thickness = 1.dp)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), thickness = 1.dp)
                     }
                 }
             }

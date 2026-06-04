@@ -58,9 +58,7 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
         // Hydrate initial defaults
         viewModelScope.launch {
             servers.collectLatest { list ->
-                if (list.isEmpty()) {
-                    seedDefaultConfig()
-                } else if (_selectedServer.value == null) {
+                if (list.isNotEmpty() && _selectedServer.value == null) {
                     val defaultServer = list.find { it.isDefault } ?: list.first()
                     _selectedServer.value = defaultServer
                 }
@@ -84,28 +82,6 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
                     _pingMs.value = null
                 }
             }
-        }
-    }
-
-    private suspend fun seedDefaultConfig() {
-        val initialConfig = "vless://c35050ce-01ab-45a9-91b8-54cec637d0a8@188.114.97.6:443?path=%2Fudfyfws&security=tls&alpn=h3%2Ch2%2Chttp%2F1.1&encryption=none&insecure=0&host=octopusss5.info&fp=chrome&type=ws&allowInsecure=0&sni=octopusss5.info#mrvpn294"
-        val parsed = VlessConfig.parse(initialConfig)
-        val name = parsed?.remarks ?: "Official server (mrvpn294)"
-        
-        // Highly secure setup: generate AES-GCM 256 key specifically for encrypting configuration string
-        val aesKey = CryptoUtils.generateKey()
-        val encryptedUrl = CryptoUtils.encrypt(initialConfig, aesKey)
-
-        val server = VpnServer(
-            name = name,
-            configUrl = "SECURED_ENCRYPTED_FIELD",
-            remarks = "Primary high-speed secure trunk",
-            isDefault = true,
-            encryptedConfig = encryptedUrl,
-            encryptionKey = aesKey
-        )
-        withContext(Dispatchers.IO) {
-            vpnDao.insertServer(server)
         }
     }
 

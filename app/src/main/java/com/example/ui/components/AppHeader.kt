@@ -8,9 +8,12 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.LightMode
+import androidx.compose.material.icons.filled.DarkMode
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -24,6 +27,8 @@ import com.example.ui.theme.CyberCyan
 
 @Composable
 fun AppHeader(
+    isDarkTheme: Boolean,
+    onThemeToggle: () -> Unit,
     onAdminClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -56,30 +61,55 @@ fun AppHeader(
             
             Text(
                 text = "MRVPN Pro",
-                color = Color.White,
+                color = MaterialTheme.colorScheme.onBackground,
                 fontSize = 20.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = (-0.5).sp
             )
         }
 
-        // Top-right administrative circular button
-        Box(
-            modifier = Modifier
-                .size(42.dp)
-                .background(Color.White.copy(alpha = 0.05f), shape = CircleShape)
-                .border(1.dp, Color.White.copy(alpha = 0.12f), CircleShape)
-                .clip(CircleShape)
-                .clickable(onClick = onAdminClick)
-                .testTag("admin_panel_trigger_top_bar"),
-            contentAlignment = Alignment.Center
+        // Action Buttons Row (Theme Toggle & Settings)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(10.dp),
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Icon(
-                imageVector = Icons.Default.Settings,
-                contentDescription = "ورود به پنل تنظیمات",
-                tint = Color.White,
-                modifier = Modifier.size(20.dp)
-            )
+            // Theme toggle button
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape)
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), CircleShape)
+                    .clip(CircleShape)
+                    .clickable(onClick = onThemeToggle)
+                    .testTag("theme_mode_toggle_button"),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
+                    contentDescription = "تغییر حالت شب و روز",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+
+            // Top-right administrative circular button
+            Box(
+                modifier = Modifier
+                    .size(42.dp)
+                    .background(MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape)
+                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), CircleShape)
+                    .clip(CircleShape)
+                    .clickable(onClick = onAdminClick)
+                    .testTag("admin_panel_trigger_top_bar"),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Settings,
+                    contentDescription = "ورود به پنل تنظیمات",
+                    tint = MaterialTheme.colorScheme.onBackground,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
         }
     }
 }

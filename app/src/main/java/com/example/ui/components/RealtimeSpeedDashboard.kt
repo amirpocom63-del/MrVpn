@@ -67,8 +67,8 @@ private fun SpeedCard(
 ) {
     Column(
         modifier = modifier
-            .background(Color.White.copy(alpha = 0.05f), shape = RoundedCornerShape(24.dp))
-            .border(1.dp, Color.White.copy(alpha = 0.08f), RoundedCornerShape(24.dp))
+            .background(androidx.compose.material3.MaterialTheme.colorScheme.surfaceVariant, shape = RoundedCornerShape(24.dp))
+            .border(1.dp, androidx.compose.material3.MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), RoundedCornerShape(24.dp))
             .padding(16.dp)
     ) {
         // Top label with mini icon
@@ -85,7 +85,7 @@ private fun SpeedCard(
             
             Text(
                 text = label,
-                color = Color.White.copy(alpha = 0.4f),
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Bold,
                 letterSpacing = 1.sp
@@ -109,14 +109,14 @@ private fun SpeedCard(
         ) {
             Text(
                 text = formattedSpeed,
-                color = Color.White,
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground,
                 fontSize = 24.sp,
                 fontWeight = FontWeight.Black
             )
             
             Text(
                 text = unit,
-                color = Color.White.copy(alpha = 0.45f),
+                color = androidx.compose.material3.MaterialTheme.colorScheme.onBackground.copy(alpha = 0.45f),
                 fontSize = 11.sp,
                 fontWeight = FontWeight.Medium
             )

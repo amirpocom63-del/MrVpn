@@ -9,6 +9,7 @@ import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -53,7 +54,8 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         
         setContent {
-            MyApplicationTheme {
+            var isDarkTheme by remember { mutableStateOf(true) }
+            MyApplicationTheme(darkTheme = isDarkTheme) {
                 val servers by viewModel.servers.collectAsStateWithLifecycle()
                 val selectedServer by viewModel.selectedServer.collectAsStateWithLifecycle()
                 val connectionState by viewModel.connectionState.collectAsStateWithLifecycle()
@@ -67,12 +69,12 @@ class MainActivity : ComponentActivity() {
                 Scaffold(
                     modifier = Modifier
                         .fillMaxSize()
-                        .background(Color(0xFF0F1115))
+                        .background(MaterialTheme.colorScheme.background)
                 ) { innerPadding ->
                     Box(
                         modifier = Modifier
                             .fillMaxSize()
-                            .background(Color(0xFF0F1115))
+                            .background(MaterialTheme.colorScheme.background)
                     ) {
                         // Main Dashboard Client Surface
                         Column(
@@ -82,7 +84,11 @@ class MainActivity : ComponentActivity() {
                                 .navigationBarsPadding(),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            AppHeader(onAdminClick = { showPasscodeLock = true })
+                            AppHeader(
+                                isDarkTheme = isDarkTheme,
+                                onThemeToggle = { isDarkTheme = !isDarkTheme },
+                                onAdminClick = { showPasscodeLock = true }
+                            )
 
                             Spacer(modifier = Modifier.weight(0.2f))
 
@@ -115,8 +121,6 @@ class MainActivity : ComponentActivity() {
                                 isPinging = isPinging,
                                 onTestPingClick = { viewModel.triggerPing() }
                             )
-
-                            TelegramProxyCard(connectionState = connectionState)
 
                             Spacer(modifier = Modifier.height(14.dp))
 
