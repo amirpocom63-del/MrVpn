@@ -169,10 +169,16 @@ class MyVpnService : VpnService(), Runnable {
                 .addAddress("10.0.0.2", 24)
                 .addRoute("0.0.0.0", 0)
                 .addRoute("::", 0)
-                .addDnsServer("1.1.1.1")
+                .addDnsServer("10.0.0.2")
                 .addDnsServer("8.8.8.8")
                 .setMtu(1500)
             
+            try {
+                builder.addDisallowedApplication(packageName)
+            } catch (e: Exception) {
+                Log.e("MyVpnService", "Failed to add disallowed application", e)
+            }
+
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 builder.setHttpProxy(android.net.ProxyInfo.buildDirectProxy("127.0.0.1", proxyPort))
             }
@@ -256,10 +262,10 @@ class MyVpnService : VpnService(), Runnable {
             val (domainName, endQnamePos) = parseDnsName(packet, dnsOffset + 12)
             if (domainName.isEmpty()) return
             
-            // Resolve domain name in a background task
+            // Resolve domain name in a background task via protected socket
             Thread {
                 try {
-                    val ips = InetAddress.getAllByName(domainName).filter { it is java.net.Inet4Address }
+                    val ips = resolveDnsProtected(domainName)
                     if (ips.isEmpty()) return@Thread
                     
                     // Build DNS response
@@ -397,6 +403,15 @@ class MyVpnService : VpnService(), Runnable {
             sum = (sum and 0xFFFF) + (sum shr 16)
         }
         return (sum.inv()) and 0xFFFF
+    }
+
+    private fun resolveDnsProtected(domain: String): List<InetAddress> {
+        return try {
+            InetAddress.getAllByName(domain).filter { it is java.net.Inet4Address }
+        } catch (e: Exception) {
+            Log.e("MyVpnService", "Failed to resolve DNS over system resolver for $domain: ${e.message}")
+            emptyList()
+        }
     }
 
     private fun parseDnsName(packet: ByteArray, startOffset: Int): Pair<String, Int> {

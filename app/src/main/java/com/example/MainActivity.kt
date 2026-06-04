@@ -116,6 +116,8 @@ class MainActivity : ComponentActivity() {
                                 onTestPingClick = { viewModel.triggerPing() }
                             )
 
+                            TelegramProxyCard(connectionState = connectionState)
+
                             Spacer(modifier = Modifier.height(14.dp))
 
                             // Server selections and administration entry

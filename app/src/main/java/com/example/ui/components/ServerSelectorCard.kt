@@ -1,5 +1,7 @@
 package com.example.ui.components
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -113,9 +115,11 @@ fun ServerSelectorCard(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .heightIn(max = 200.dp)
+                    .verticalScroll(rememberScrollState())
                     .testTag("servers_quick_list")
             ) {
-                servers.take(3).forEachIndexed { index, server ->
+                servers.forEachIndexed { index, server ->
                     val isSelected = selectedServer?.id == server.id
                     
                     Row(
