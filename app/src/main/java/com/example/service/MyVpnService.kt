@@ -19,9 +19,19 @@ import kotlinx.coroutines.flow.StateFlow
 import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
+import java.io.FileInputStream
+import java.io.FileOutputStream
 import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
+import java.net.InetAddress
+import java.util.ArrayList
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
+import java.security.cert.X509Certificate
+import javax.net.ssl.SSLSocketFactory
+import javax.net.ssl.SSLSocket
 
 class MyVpnService : VpnService(), Runnable {
     
@@ -32,6 +42,7 @@ class MyVpnService : VpnService(), Runnable {
     private var proxyThread: Thread? = null
     private val proxyPort = 20808
     private var activeConfigUrl: String? = null
+    private var tunnelReaderThread: Thread? = null
 
     private val CHANNEL_ID = "MyVpnServiceChannel"
     private val NOTIFICATION_ID = 4591
@@ -141,6 +152,8 @@ class MyVpnService : VpnService(), Runnable {
             Log.e("MyVpnService", "Error closing interface", e)
         }
         vpnInterface = null
+        tunnelReaderThread?.interrupt()
+        tunnelReaderThread = null
         vpnThread?.interrupt()
         vpnThread = null
         _vpnState.value = ConnectionState.DISCONNECTED
@@ -154,7 +167,8 @@ class MyVpnService : VpnService(), Runnable {
             val builder = Builder()
                 .setSession("MrVpn Connection")
                 .addAddress("10.0.0.2", 24)
-                .addRoute("10.0.0.0", 8)
+                .addRoute("0.0.0.0", 0)
+                .addRoute("::", 0)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
                 .setMtu(1500)
@@ -163,20 +177,246 @@ class MyVpnService : VpnService(), Runnable {
                 builder.setHttpProxy(android.net.ProxyInfo.buildDirectProxy("127.0.0.1", proxyPort))
             }
             
-            vpnInterface = builder.establish()
-            _vpnState.value = ConnectionState.CONNECTED
-            Log.i("MyVpnService", "Real VPN tunnel interface established successfully with Port $proxyPort")
-
-            while (!Thread.currentThread().isInterrupted) {
-                Thread.sleep(1000)
+            val activeInterface = builder.establish()
+            vpnInterface = activeInterface
+            
+            if (activeInterface != null) {
+                _vpnState.value = ConnectionState.CONNECTED
+                Log.i("MyVpnService", "Real VPN tunnel interface established successfully with Port $proxyPort")
+                
+                val inputStream = java.io.FileInputStream(activeInterface.fileDescriptor)
+                val outputStream = java.io.FileOutputStream(activeInterface.fileDescriptor)
+                
+                tunnelReaderThread = Thread {
+                    val buffer = ByteArray(16384)
+                    try {
+                        while (!Thread.currentThread().isInterrupted) {
+                            val readBytes = inputStream.read(buffer)
+                            if (readBytes <= 0) {
+                                Thread.sleep(50)
+                                continue
+                            }
+                            
+                            // Intercept DNS Packets
+                            try {
+                                handleDnsPacket(buffer, readBytes, outputStream)
+                            } catch (dnsEx: Exception) {
+                                // Ignore DNS interception faults
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.i("MyVpnService", "TUN reader stopped: ${e.message}")
+                    }
+                }.apply { start() }
+                
+                try {
+                    tunnelReaderThread?.join()
+                } catch (e: InterruptedException) {
+                    Log.i("MyVpnService", "VPN join interrupted")
+                }
+            } else {
+                Log.e("MyVpnService", "Failed to establish VPN interface (null)")
             }
-        } catch (e: InterruptedException) {
-            Log.i("MyVpnService", "VPN thread interrupted")
         } catch (e: Exception) {
             Log.e("MyVpnService", "Error establishing VPN interface", e)
         } finally {
             stopVpn()
         }
+    }
+
+    private fun handleDnsPacket(packet: ByteArray, len: Int, out: java.io.FileOutputStream) {
+        if (len < 28) return
+        val ipVersion = (packet[0].toInt() shr 4) and 0x0F
+        if (ipVersion != 4) return // IPv4 only for DNS queries
+        
+        val ipProto = packet[9].toInt() and 0xFF
+        if (ipProto != 17) return // UDP only
+        
+        val ipHeaderLen = (packet[0].toInt() and 0x0F) * 4
+        if (len < ipHeaderLen + 8) return
+        
+        val srcPort = ((packet[ipHeaderLen].toInt() and 0xFF) shl 8) or (packet[ipHeaderLen + 1].toInt() and 0xFF)
+        val destPort = ((packet[ipHeaderLen + 2].toInt() and 0xFF) shl 8) or (packet[ipHeaderLen + 3].toInt() and 0xFF)
+        
+        if (destPort != 53) return // DNS query is on port 53
+        
+        val dnsOffset = ipHeaderLen + 8
+        if (len < dnsOffset + 12) return
+        
+        val txId0 = packet[dnsOffset]
+        val txId1 = packet[dnsOffset + 1]
+        val flags = ((packet[dnsOffset + 2].toInt() and 0xFF) shl 8) or (packet[dnsOffset + 3].toInt() and 0xFF)
+        val qr = (flags shr 15) and 0x01
+        if (qr != 0) return // It's already a response, ignore
+        
+        val qdCount = ((packet[dnsOffset + 4].toInt() and 0xFF) shl 8) or (packet[dnsOffset + 5].toInt() and 0xFF)
+        if (qdCount <= 0) return
+        
+        try {
+            val (domainName, endQnamePos) = parseDnsName(packet, dnsOffset + 12)
+            if (domainName.isEmpty()) return
+            
+            // Resolve domain name in a background task
+            Thread {
+                try {
+                    val ips = InetAddress.getAllByName(domainName).filter { it is java.net.Inet4Address }
+                    if (ips.isEmpty()) return@Thread
+                    
+                    // Build DNS response
+                    val dnsResp = ByteArrayOutputStream()
+                    // Tx ID
+                    dnsResp.write(txId0.toInt())
+                    dnsResp.write(txId1.toInt())
+                    // Flags: Response, Opcode 0, Authoritative 0, Truncated 0, Recursion Desired 1, Recursion Available 1, Rcode 0
+                    dnsResp.write(0x81)
+                    dnsResp.write(0x80)
+                    // QDCount (1)
+                    dnsResp.write(0x00)
+                    dnsResp.write(0x01)
+                    // ANCount
+                    val anCount = ips.size.coerceAtMost(10)
+                    dnsResp.write(0x00)
+                    dnsResp.write(anCount)
+                    // NSCount
+                    dnsResp.write(0x00)
+                    dnsResp.write(0x00)
+                    // ARCount
+                    dnsResp.write(0x00)
+                    dnsResp.write(0x00)
+                    
+                    // Re-write query question section
+                    val qNameLen = endQnamePos - (dnsOffset + 12)
+                    dnsResp.write(packet, dnsOffset + 12, qNameLen)
+                    // QTYPE (A = 1)
+                    dnsResp.write(0x00)
+                    dnsResp.write(0x01)
+                    // QCLASS (IN = 1)
+                    dnsResp.write(0x00)
+                    dnsResp.write(0x01)
+                    
+                    // Answers
+                    for (i in 0 until anCount) {
+                        // Name pointer to question at offset 12
+                        dnsResp.write(0xC0)
+                        dnsResp.write(0x0C)
+                        // TYPE (A = 1)
+                        dnsResp.write(0x00)
+                        dnsResp.write(0x01)
+                        // CLASS (IN = 1)
+                        dnsResp.write(0x00)
+                        dnsResp.write(0x01)
+                        // TTL (e.g. 60 seconds)
+                        dnsResp.write(0x00)
+                        dnsResp.write(0x00)
+                        dnsResp.write(0x00)
+                        dnsResp.write(0x3C)
+                        // RDLENGTH (4 bytes for IPv4)
+                        dnsResp.write(0x00)
+                        dnsResp.write(0x04)
+                        // IP address bytes
+                        dnsResp.write(ips[i].address)
+                    }
+                    
+                    val dnsBytes = dnsResp.toByteArray()
+                    
+                    // Build UDP response
+                    val udpLen = 8 + dnsBytes.size
+                    val ipLen = 20 + udpLen
+                    
+                    val respPacket = ByteArray(ipLen)
+                    // IPv4 Header
+                    respPacket[0] = 0x45.toByte()
+                    respPacket[1] = 0x00.toByte()
+                    respPacket[2] = ((ipLen shr 8) and 0xFF).toByte()
+                    respPacket[3] = (ipLen and 0xFF).toByte()
+                    // ID
+                    respPacket[4] = 0x00.toByte()
+                    respPacket[5] = 0x00.toByte()
+                    // Flags & Frag offset
+                    respPacket[6] = 0x40.toByte() // Don't fragment
+                    respPacket[7] = 0x00.toByte()
+                    // TTL
+                    respPacket[8] = 0x40.toByte()
+                    // Protocol (17)
+                    respPacket[9] = 17.toByte()
+                    // Checksum (keep 0, the kernel will calculate or re-calculate it)
+                    respPacket[10] = 0x00.toByte()
+                    respPacket[11] = 0x00.toByte()
+                    
+                    // Swap IP addresses
+                    // Src IP was dest IP of query
+                    System.arraycopy(packet, 16, respPacket, 12, 4)
+                    // Dest IP was src IP of query
+                    System.arraycopy(packet, 12, respPacket, 16, 4)
+                    
+                    // UDP Header
+                    // Src Port (53)
+                    respPacket[20] = 0x00.toByte()
+                    respPacket[21] = 0x35.toByte()
+                    // Dest Port (query's srcPort)
+                    respPacket[22] = ((srcPort shr 8) and 0xFF).toByte()
+                    respPacket[23] = (srcPort and 0xFF).toByte()
+                    // UDP Length
+                    respPacket[24] = ((udpLen shr 8) and 0xFF).toByte()
+                    respPacket[25] = (udpLen and 0xFF).toByte()
+                    // UDP Checksum (0 means disabled)
+                    respPacket[26] = 0x00.toByte()
+                    respPacket[27] = 0x00.toByte()
+                    
+                    // Copy DNS payload
+                    System.arraycopy(dnsBytes, 0, respPacket, 28, dnsBytes.size)
+                    
+                    // Recalculate IPv4 Checksum
+                    val checksum = calculateChecksum(respPacket, 20)
+                    respPacket[10] = ((checksum shr 8) and 0xFF).toByte()
+                    respPacket[11] = (checksum and 0xFF).toByte()
+                    
+                    synchronized(out) {
+                        out.write(respPacket)
+                        out.flush()
+                    }
+                } catch (e: Exception) {
+                    Log.e("MyVpnService", "Error resolving DNS for $domainName", e)
+                }
+            }.start()
+            
+        } catch (e: Exception) {
+            Log.e("MyVpnService", "Error parsing DNS packet", e)
+        }
+    }
+
+    private fun calculateChecksum(buf: ByteArray, length: Int): Int {
+        var sum = 0
+        var i = 0
+        while (i < length) {
+            val word = ((buf[i].toInt() and 0xFF) shl 8) or (buf[i + 1].toInt() and 0xFF)
+            sum += word
+            i += 2
+        }
+        while (sum shr 16 != 0) {
+            sum = (sum and 0xFFFF) + (sum shr 16)
+        }
+        return (sum.inv()) and 0xFFFF
+    }
+
+    private fun parseDnsName(packet: ByteArray, startOffset: Int): Pair<String, Int> {
+        var pos = startOffset
+        val sb = StringBuilder()
+        while (pos < packet.size) {
+            val len = packet[pos].toInt() and 0xFF
+            if (len == 0) {
+                pos++
+                break
+            }
+            if (sb.isNotEmpty()) {
+                sb.append('.')
+            }
+            if (pos + 1 + len <= packet.size) {
+                sb.append(String(packet, pos + 1, len, Charsets.US_ASCII))
+            }
+            pos += 1 + len
+        }
+        return Pair(sb.toString(), pos)
     }
 
     // Local Dual Proxy Server
@@ -202,10 +442,10 @@ class MyVpnService : VpnService(), Runnable {
                                 
                                 if (firstByte == 0x05) {
                                     handleSocks5(clientSocket, firstByte)
-                                } else if (firstByte == 'C'.code) {
+                                } else if (firstByte in 0x20..0x7E) {
                                     val remainingLine = readLine(input) ?: ""
-                                    val firstLine = "C" + remainingLine
-                                    handleHttpConnect(clientSocket, firstLine)
+                                    val firstLine = firstByte.toChar().toString() + remainingLine
+                                    handleHttpRequest(clientSocket, firstLine)
                                 } else {
                                     try { clientSocket.close() } catch (e: Exception) {}
                                 }
@@ -318,36 +558,112 @@ class MyVpnService : VpnService(), Runnable {
         }
     }
 
-    private fun handleHttpConnect(clientSocket: Socket, firstLine: String) {
+    private fun handleHttpRequest(clientSocket: Socket, firstLine: String) {
         try {
             val input = clientSocket.getInputStream()
             val output = clientSocket.getOutputStream()
             
             val parts = firstLine.split(" ")
-            if (parts.size < 2) return
-            val hostPort = parts[1]
-            val hostPortParts = hostPort.split(":")
-            val destHost = hostPortParts[0]
-            val destPort = if (hostPortParts.size > 1) hostPortParts[1].toIntOrNull() ?: 443 else 443
-            
-            while (true) {
-                val l = readLine(input)
-                if (l.isNullOrEmpty()) break
-            }
-            
-            val remoteTunnel = connectToRemote(destHost, destPort)
-            if (remoteTunnel == null) {
-                output.write("HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray(Charsets.UTF_8))
-                output.flush()
+            if (parts.size < 2) {
+                try { clientSocket.close() } catch (e: Exception) {}
                 return
             }
             
-            output.write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.UTF_8))
-            output.flush()
+            val method = parts[0].uppercase()
+            val urlOrHost = parts[1]
             
-            bridgeConnections(clientSocket, remoteTunnel)
+            var destHost = ""
+            var destPort = 80
+            
+            if (method == "CONNECT") {
+                val hostPortParts = urlOrHost.split(":")
+                destHost = hostPortParts[0]
+                destPort = if (hostPortParts.size > 1) hostPortParts[1].toIntOrNull() ?: 443 else 443
+                
+                while (true) {
+                    val l = readLine(input)
+                    if (l.isNullOrEmpty()) break
+                }
+                
+                val remoteTunnel = connectToRemote(destHost, destPort)
+                if (remoteTunnel == null) {
+                    output.write("HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray(Charsets.UTF_8))
+                    output.flush()
+                    try { clientSocket.close() } catch (e: Exception) {}
+                    return
+                }
+                
+                output.write("HTTP/1.1 200 Connection Established\r\n\r\n".toByteArray(Charsets.UTF_8))
+                output.flush()
+                
+                bridgeConnections(clientSocket, remoteTunnel)
+            } else {
+                val url = urlOrHost
+                if (url.startsWith("http://", ignoreCase = true)) {
+                    val temp = url.substring(7)
+                    val slashIdx = temp.indexOf('/')
+                    val hostPort = if (slashIdx == -1) temp else temp.substring(0, slashIdx)
+                    val hostPortParts = hostPort.split(":")
+                    destHost = hostPortParts[0]
+                    destPort = if (hostPortParts.size > 1) hostPortParts[1].toIntOrNull() ?: 80 else 80
+                }
+                
+                val headers = ArrayList<String>()
+                while (true) {
+                    val l = readLine(input)
+                    if (l.isNullOrEmpty()) break
+                    headers.add(l)
+                    if (destHost.isEmpty() && l.lowercase().startsWith("host:")) {
+                        val hostVal = l.substring(5).trim()
+                        val hostPortParts = hostVal.split(":")
+                        destHost = hostPortParts[0]
+                        destPort = if (hostPortParts.size > 1) hostPortParts[1].toIntOrNull() ?: 80 else 80
+                    }
+                }
+                
+                if (destHost.isEmpty()) {
+                    try { clientSocket.close() } catch (e: Exception) {}
+                    return
+                }
+                
+                val remoteTunnel = connectToRemote(destHost, destPort)
+                if (remoteTunnel == null) {
+                    output.write("HTTP/1.1 502 Bad Gateway\r\n\r\n".toByteArray(Charsets.UTF_8))
+                    output.flush()
+                    try { clientSocket.close() } catch (e: Exception) {}
+                    return
+                }
+                
+                val requestBuilder = StringBuilder()
+                requestBuilder.append(firstLine).append("\r\n")
+                for (h in headers) {
+                    requestBuilder.append(h).append("\r\n")
+                }
+                requestBuilder.append("\r\n")
+                
+                val requestBytes = requestBuilder.toString().toByteArray(Charsets.UTF_8)
+                remoteTunnel.send(requestBytes, requestBytes.size)
+                
+                bridgeConnections(clientSocket, remoteTunnel)
+            }
         } catch (e: Exception) {
             Log.e("MyVpnService", "Error handshaking HTTP Connect", e)
+        }
+    }
+
+    private fun getTrustAllSocketFactory(): SSLSocketFactory {
+        return try {
+            val trustAllCerts = arrayOf<TrustManager>(object : X509TrustManager {
+                override fun getAcceptedIssuers(): Array<X509Certificate> = arrayOf()
+                override fun checkClientTrusted(chain: Array<X509Certificate>, authType: String) {}
+                override fun checkServerTrusted(chain: Array<X509Certificate>, authType: String) {}
+            })
+
+            val sslContext = SSLContext.getInstance("TLS")
+            sslContext.init(null, trustAllCerts, java.security.SecureRandom())
+            sslContext.socketFactory
+        } catch (e: Exception) {
+            javax.net.ssl.SSLSocketFactory.getDefault() as SSLSocketFactory
         }
     }
 
@@ -373,7 +689,7 @@ class MyVpnService : VpnService(), Runnable {
             socket.connect(InetSocketAddress(config.address, config.port), 12000)
             
             val activeSocket = if (config.security == "tls" || config.security == "xtls" || config.port == 443) {
-                val sslSocketFactory = javax.net.ssl.SSLSocketFactory.getDefault() as javax.net.ssl.SSLSocketFactory
+                val sslSocketFactory = getTrustAllSocketFactory()
                 val sslSocket = sslSocketFactory.createSocket(socket, config.sni ?: config.address, config.port, true) as javax.net.ssl.SSLSocket
                 sslSocket.startHandshake()
                 sslSocket
