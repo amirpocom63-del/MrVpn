@@ -169,8 +169,9 @@ class MyVpnService : VpnService(), Runnable {
                 .addAddress("10.0.0.2", 24)
                 .addRoute("0.0.0.0", 0)
                 .addRoute("::", 0)
-                .addDnsServer("10.0.0.2")
+                .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
+                .addDnsServer("8.8.4.4")
                 .setMtu(1500)
             
             try {
@@ -287,8 +288,18 @@ class MyVpnService : VpnService(), Runnable {
                     // QDCount (1)
                     dnsResp.write(0x00)
                     dnsResp.write(0x01)
+                    
+                    // Parse original QTYPE and QCLASS
+                    val originalQType = if (endQnamePos + 1 < packet.size) {
+                        ((packet[endQnamePos].toInt() and 0xFF) shl 8) or (packet[endQnamePos + 1].toInt() and 0xFF)
+                    } else {
+                        1
+                    }
+                    
+                    // Only return IP answers if the query is an 'A' record (IPv4)
+                    val anCount = if (originalQType == 1) ips.size.coerceAtMost(10) else 0
+                    
                     // ANCount
-                    val anCount = ips.size.coerceAtMost(10)
                     dnsResp.write(0x00)
                     dnsResp.write(anCount)
                     // NSCount
@@ -298,37 +309,43 @@ class MyVpnService : VpnService(), Runnable {
                     dnsResp.write(0x00)
                     dnsResp.write(0x00)
                     
-                    // Re-write query question section
+                    // Re-write query question section (QNAME)
                     val qNameLen = endQnamePos - (dnsOffset + 12)
                     dnsResp.write(packet, dnsOffset + 12, qNameLen)
-                    // QTYPE (A = 1)
-                    dnsResp.write(0x00)
-                    dnsResp.write(0x01)
-                    // QCLASS (IN = 1)
-                    dnsResp.write(0x00)
-                    dnsResp.write(0x01)
                     
-                    // Answers
-                    for (i in 0 until anCount) {
-                        // Name pointer to question at offset 12
-                        dnsResp.write(0xC0)
-                        dnsResp.write(0x0C)
-                        // TYPE (A = 1)
+                    // Re-write raw QTYPE and QCLASS exactly as in the query
+                    if (endQnamePos + 3 < packet.size) {
+                        dnsResp.write(packet, endQnamePos, 4)
+                    } else {
                         dnsResp.write(0x00)
                         dnsResp.write(0x01)
-                        // CLASS (IN = 1)
                         dnsResp.write(0x00)
                         dnsResp.write(0x01)
-                        // TTL (e.g. 60 seconds)
-                        dnsResp.write(0x00)
-                        dnsResp.write(0x00)
-                        dnsResp.write(0x00)
-                        dnsResp.write(0x3C)
-                        // RDLENGTH (4 bytes for IPv4)
-                        dnsResp.write(0x00)
-                        dnsResp.write(0x04)
-                        // IP address bytes
-                        dnsResp.write(ips[i].address)
+                    }
+                    
+                    // Answers (only for standard A queries)
+                    if (originalQType == 1) {
+                        for (i in 0 until anCount) {
+                            // Name pointer to question at offset 12
+                            dnsResp.write(0xC0)
+                            dnsResp.write(0x0C)
+                            // TYPE (A = 1)
+                            dnsResp.write(0x00)
+                            dnsResp.write(0x01)
+                            // CLASS (IN = 1)
+                            dnsResp.write(0x00)
+                            dnsResp.write(0x01)
+                            // TTL (e.g. 60 seconds)
+                            dnsResp.write(0x00)
+                            dnsResp.write(0x00)
+                            dnsResp.write(0x00)
+                            dnsResp.write(0x3C)
+                            // RDLENGTH (4 bytes for IPv4)
+                            dnsResp.write(0x00)
+                            dnsResp.write(0x04)
+                            // IP address bytes
+                            dnsResp.write(ips[i].address)
+                        }
                     }
                     
                     val dnsBytes = dnsResp.toByteArray()

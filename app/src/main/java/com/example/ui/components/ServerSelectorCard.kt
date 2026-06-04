@@ -42,6 +42,7 @@ fun ServerSelectorCard(
     isSyncing: Boolean,
     syncError: String?,
     onSyncClick: () -> Unit,
+    onOpenServerList: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -94,6 +95,41 @@ fun ServerSelectorCard(
         }
 
         Spacer(modifier = Modifier.height(14.dp))
+
+        // Major button leading to comprehensive server details and single ping testers
+        if (servers.isNotEmpty()) {
+            Button(
+                onClick = onOpenServerList,
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = CyberCyan.copy(alpha = 0.12f),
+                    contentColor = CyberCyan
+                ),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(44.dp)
+                    .testTag("open_server_list_dialog_button"),
+                shape = RoundedCornerShape(12.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.List,
+                        contentDescription = "مشاهده لیست سرورها",
+                        tint = CyberCyan,
+                        modifier = Modifier.size(18.dp)
+                    )
+                    Text(
+                        text = "لیست سرورها (اتصال و تست پینگ)",
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+        }
 
         // Actions Panel: Test All Pings and Smart Connect
         if (servers.isNotEmpty()) {
@@ -236,7 +272,7 @@ fun ServerSelectorCard(
                         }
                     }
                     
-                    if (index < servers.size - 1 && index < 2) {
+                    if (index < servers.size - 1) {
                         HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), thickness = 1.dp)
                     }
                 }

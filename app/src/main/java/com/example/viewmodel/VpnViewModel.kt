@@ -251,6 +251,33 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    fun testSingleServerPing(server: VpnServer) {
+        viewModelScope.launch {
+            val pings = _serverPings.value.toMutableMap()
+            pings[server.id] = null // UI loading state indicators
+            _serverPings.value = pings
+
+            var host = "188.114.97.6"
+            var port = 443
+            if (server.encryptedConfig.isNotEmpty() && server.encryptionKey.isNotEmpty()) {
+                try {
+                    val rawUrl = CryptoUtils.decrypt(server.encryptedConfig, server.encryptionKey)
+                    val parsed = VlessConfig.parse(rawUrl)
+                    if (parsed != null) {
+                        host = parsed.address
+                        port = parsed.port
+                    }
+                } catch (e: Exception) {
+                    e.printStackTrace()
+                }
+            }
+            val result = ConnectionSimulator.measurePing(host, port)
+            val updatedMap = _serverPings.value.toMutableMap()
+            updatedMap[server.id] = result
+            _serverPings.value = updatedMap
+        }
+    }
+
     fun connectToBestServer() {
         viewModelScope.launch {
             _isPingingAll.value = true

@@ -55,6 +55,7 @@ class MainActivity : ComponentActivity() {
         
         setContent {
             var isDarkTheme by remember { mutableStateOf(true) }
+            var showServerListDialog by remember { mutableStateOf(false) }
             MyApplicationTheme(darkTheme = isDarkTheme) {
                 val servers by viewModel.servers.collectAsStateWithLifecycle()
                 val selectedServer by viewModel.selectedServer.collectAsStateWithLifecycle()
@@ -135,11 +136,34 @@ class MainActivity : ComponentActivity() {
                                 onServerSelected = { viewModel.selectServer(it) },
                                 isSyncing = isSyncingSubscription,
                                 syncError = subscriptionSyncError,
-                                onSyncClick = { viewModel.triggerSubscriptionSync(manually = true) }
+                                onSyncClick = { viewModel.triggerSubscriptionSync(manually = true) },
+                                onOpenServerList = { showServerListDialog = true }
                             )
 
                             Spacer(modifier = Modifier.weight(1.0f))
                         }
+
+                        // Detailed, comprehensive server selector dialog
+                        ServerListDialog(
+                            isOpen = showServerListDialog,
+                            servers = servers,
+                            selectedServer = selectedServer,
+                            serverPings = serverPings,
+                            isPingingAll = isPingingAll,
+                            onServerSelected = { server ->
+                                viewModel.selectServer(server)
+                                showServerListDialog = false
+                            },
+                            onTestSinglePing = { server ->
+                                viewModel.testSingleServerPing(server)
+                            },
+                            onTestAllPings = {
+                                viewModel.testAllServerPings()
+                            },
+                            onClose = {
+                                showServerListDialog = false
+                            }
+                        )
                     }
                 }
             }
