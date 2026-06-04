@@ -39,7 +39,9 @@ fun ServerSelectorCard(
     onTestAllPings: () -> Unit,
     onSmartConnect: () -> Unit,
     onServerSelected: (VpnServer) -> Unit,
-    onManageAdminClick: () -> Unit,
+    isSyncing: Boolean,
+    syncError: String?,
+    onSyncClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(
@@ -77,29 +79,17 @@ fun ServerSelectorCard(
             Box(
                 modifier = Modifier
                     .background(CyberCyan.copy(alpha = 0.12f), shape = RoundedCornerShape(12.dp))
-                    .border(1.dp, CyberCyan.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-                    .clickable(onClick = onManageAdminClick)
+                    .border(1.dp, CyberCyan.copy(alpha = 0.20f), RoundedCornerShape(12.dp))
                     .padding(horizontal = 12.dp, vertical = 6.dp)
-                    .testTag("admin_panel_trigger_button"),
+                    .testTag("servers_badge_display"),
                 contentAlignment = Alignment.Center
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Settings,
-                        contentDescription = "ورود به پنل مدیریت سرورها",
-                        tint = CyberCyan,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = "مدیریت سرور",
-                        color = CyberCyan,
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
+                Text(
+                    text = "${servers.size} سرور فعال",
+                    color = CyberCyan,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold
+                )
             }
         }
 
@@ -158,7 +148,7 @@ fun ServerSelectorCard(
                 contentAlignment = Alignment.Center
             ) {
                 Text(
-                    text = "سروری یافت نشد. از پنل مدیریت سرور اضافه کنید.",
+                    text = "در حال بارگذاری یا عدم اتصال به سرور ساب‌اسکریپشن",
                     color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.5f),
                     fontSize = 11.sp
                 )
@@ -251,6 +241,69 @@ fun ServerSelectorCard(
                     }
                 }
             }
+        }
+
+        Spacer(modifier = Modifier.height(10.dp))
+        
+        HorizontalDivider(color = MaterialTheme.colorScheme.outline.copy(alpha = 0.1f), thickness = 1.dp)
+        
+        Spacer(modifier = Modifier.height(8.dp))
+        
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onSyncClick() }
+                .padding(vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                if (isSyncing) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(10.dp),
+                        strokeWidth = 1.5.dp,
+                        color = CyberCyan
+                    )
+                    Text(
+                        text = "در حال بروزرسانی سرورها...",
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                        fontSize = 11.sp
+                    )
+                } else if (syncError != null) {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(Color(0xFFFF3366), shape = androidx.compose.foundation.shape.CircleShape)
+                    )
+                    Text(
+                        text = "خطای بروزرسانی ساب (تلاش مجدد)",
+                        color = Color(0xFFFF3366),
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                } else {
+                    Box(
+                        modifier = Modifier
+                            .size(6.dp)
+                            .background(Color(0xFF00FF66), shape = androidx.compose.foundation.shape.CircleShape)
+                    )
+                    Text(
+                        text = "سرورها همگام‌سازی شده‌اند",
+                        color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f),
+                        fontSize = 11.sp
+                    )
+                }
+            }
+            
+            Text(
+                text = "بروزرسانی دستی",
+                color = CyberCyan,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold
+            )
         }
     }
 }

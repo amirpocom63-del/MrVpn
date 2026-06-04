@@ -64,9 +64,8 @@ class MainActivity : ComponentActivity() {
                 val networkSpeed by viewModel.networkSpeed.collectAsStateWithLifecycle()
                 val serverPings by viewModel.serverPings.collectAsStateWithLifecycle()
                 val isPingingAll by viewModel.isPingingAll.collectAsStateWithLifecycle()
-
-                var showAdminPanel by remember { mutableStateOf(false) }
-                var showPasscodeLock by remember { mutableStateOf(false) }
+                val isSyncingSubscription by viewModel.isSyncingSubscription.collectAsStateWithLifecycle()
+                val subscriptionSyncError by viewModel.subscriptionSyncError.collectAsStateWithLifecycle()
 
                 Scaffold(
                     modifier = Modifier
@@ -88,8 +87,7 @@ class MainActivity : ComponentActivity() {
                         ) {
                             AppHeader(
                                 isDarkTheme = isDarkTheme,
-                                onThemeToggle = { isDarkTheme = !isDarkTheme },
-                                onAdminClick = { showPasscodeLock = true }
+                                onThemeToggle = { isDarkTheme = !isDarkTheme }
                             )
 
                             Spacer(modifier = Modifier.weight(0.2f))
@@ -135,47 +133,12 @@ class MainActivity : ComponentActivity() {
                                 onTestAllPings = { viewModel.testAllServerPings() },
                                 onSmartConnect = { viewModel.connectToBestServer() },
                                 onServerSelected = { viewModel.selectServer(it) },
-                                onManageAdminClick = { showPasscodeLock = true }
+                                isSyncing = isSyncingSubscription,
+                                syncError = subscriptionSyncError,
+                                onSyncClick = { viewModel.triggerSubscriptionSync(manually = true) }
                             )
 
                             Spacer(modifier = Modifier.weight(1.0f))
-                        }
-
-                        // Fully animated overlay containing server credentials administrator configuration
-                        AnimatedVisibility(
-                            visible = showAdminPanel,
-                            enter = slideInVertically(initialOffsetY = { it }) + fadeIn(),
-                            exit = slideOutVertically(targetOffsetY = { it }) + fadeOut(),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            ServerManagementPanel(
-                                servers = servers,
-                                onAddServer = { name, configUrl, remarks ->
-                                    viewModel.addServer(name, configUrl, remarks)
-                                },
-                                onDeleteServer = { server ->
-                                    viewModel.deleteServer(server)
-                                },
-                                onClosePanel = { showAdminPanel = false }
-                            )
-                        }
-
-                        // Secure Admin Passcode Authentication Screen
-                        AnimatedVisibility(
-                            visible = showPasscodeLock,
-                            enter = fadeIn() + scaleIn(initialScale = 0.9f),
-                            exit = fadeOut() + scaleOut(targetScale = 0.9f),
-                            modifier = Modifier.fillMaxSize()
-                        ) {
-                            AdminPasscodeLock(
-                                onSuccess = {
-                                    showPasscodeLock = false
-                                    showAdminPanel = true
-                                },
-                                onDismiss = {
-                                    showPasscodeLock = false
-                                }
-                            )
                         }
                     }
                 }

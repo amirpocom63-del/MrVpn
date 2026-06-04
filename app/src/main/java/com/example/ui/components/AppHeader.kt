@@ -29,7 +29,6 @@ import com.example.ui.theme.CyberCyan
 fun AppHeader(
     isDarkTheme: Boolean,
     onThemeToggle: () -> Unit,
-    onAdminClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Row(
@@ -68,7 +67,7 @@ fun AppHeader(
             )
         }
 
-        // Action Buttons Row (Theme Toggle & Settings)
+        // Action Buttons Row (Theme Toggle)
         Row(
             horizontalArrangement = Arrangement.spacedBy(10.dp),
             verticalAlignment = Alignment.CenterVertically
@@ -87,25 +86,6 @@ fun AppHeader(
                 Icon(
                     imageVector = if (isDarkTheme) Icons.Default.LightMode else Icons.Default.DarkMode,
                     contentDescription = "تغییر حالت شب و روز",
-                    tint = MaterialTheme.colorScheme.onBackground,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            // Top-right administrative circular button
-            Box(
-                modifier = Modifier
-                    .size(42.dp)
-                    .background(MaterialTheme.colorScheme.surfaceVariant, shape = CircleShape)
-                    .border(1.dp, MaterialTheme.colorScheme.outline.copy(alpha = 0.15f), CircleShape)
-                    .clip(CircleShape)
-                    .clickable(onClick = onAdminClick)
-                    .testTag("admin_panel_trigger_top_bar"),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Settings,
-                    contentDescription = "ورود به پنل تنظیمات",
                     tint = MaterialTheme.colorScheme.onBackground,
                     modifier = Modifier.size(20.dp)
                 )

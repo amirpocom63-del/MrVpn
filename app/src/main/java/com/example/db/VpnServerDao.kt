@@ -31,4 +31,10 @@ interface VpnServerDao {
 
     @Query("UPDATE vpn_servers SET isDefault = 1 WHERE id = :id")
     suspend fun setDefaultServer(id: String)
+
+    @Query("DELETE FROM vpn_servers")
+    suspend fun clearAllServers()
+
+    @Query("SELECT * FROM vpn_servers ORDER BY name ASC")
+    suspend fun getAllServersSync(): List<VpnServer>
 }
