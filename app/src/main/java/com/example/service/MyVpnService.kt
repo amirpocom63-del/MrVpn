@@ -203,11 +203,19 @@ class MyVpnService : VpnService(), Runnable {
                                 continue
                             }
                             
-                            // Intercept DNS Packets
+                            // Intercept Packets of IPv4
                             try {
-                                handleDnsPacket(buffer, readBytes, outputStream)
-                            } catch (dnsEx: Exception) {
-                                // Ignore DNS interception faults
+                                val ipVersion = (buffer[0].toInt() shr 4) and 0x0F
+                                if (ipVersion == 4 && readBytes >= 20) {
+                                    val ipProto = buffer[9].toInt() and 0xFF
+                                    if (ipProto == 17) {
+                                        handleDnsPacket(buffer, readBytes, outputStream)
+                                    } else if (ipProto == 6) {
+                                        handleTcpPacket(buffer, readBytes, outputStream)
+                                    }
+                                }
+                            } catch (packetEx: Exception) {
+                                // Ignore packet processing faults to maintain connection robustness
                             }
                         }
                     } catch (e: Exception) {
@@ -432,6 +440,348 @@ class MyVpnService : VpnService(), Runnable {
             pos += 1 + len
         }
         return Pair(sb.toString(), pos)
+    }
+
+    private val activeTcpSessions = java.util.concurrent.ConcurrentHashMap<String, TransparentTcpSession>()
+
+    private fun handleTcpPacket(packet: ByteArray, len: Int, out: java.io.FileOutputStream) {
+        if (len < 40) return
+        val ipVersion = (packet[0].toInt() shr 4) and 0x0F
+        if (ipVersion != 4) return
+        
+        val ipProto = packet[9].toInt() and 0xFF
+        if (ipProto != 6) return
+        
+        val ipHeaderLen = (packet[0].toInt() and 0x0F) * 4
+        if (len < ipHeaderLen + 20) return
+        
+        val srcPort = ((packet[ipHeaderLen].toInt() and 0xFF) shl 8) or (packet[ipHeaderLen + 1].toInt() and 0xFF)
+        val destPort = ((packet[ipHeaderLen + 2].toInt() and 0xFF) shl 8) or (packet[ipHeaderLen + 3].toInt() and 0xFF)
+        
+        val srcIp = ByteArray(4)
+        val destIp = ByteArray(4)
+        System.arraycopy(packet, 12, srcIp, 0, 4)
+        System.arraycopy(packet, 16, destIp, 0, 4)
+        
+        // Skip loopback connection attempts
+        if (srcPort == proxyPort || destPort == proxyPort) return
+        
+        val destHost = java.net.InetAddress.getByAddress(destIp).hostAddress
+        val sessionKey = "$srcPort->$destHost:$destPort"
+        
+        val seqBytes = ByteArray(4)
+        System.arraycopy(packet, ipHeaderLen + 4, seqBytes, 0, 4)
+        val seq = ((seqBytes[0].toInt() and 0xFF).toLong() shl 24) or
+                  ((seqBytes[1].toInt() and 0xFF).toLong() shl 16) or
+                  ((seqBytes[2].toInt() and 0xFF).toLong() shl 8) or
+                  (seqBytes[3].toInt() and 0xFF).toLong()
+                  
+        val flags = packet[ipHeaderLen + 13].toInt() and 0xFF
+        val isSyn = (flags and 0x02) != 0
+        val isAck = (flags and 0x10) != 0
+        val isFin = (flags and 0x01) != 0
+        val isRst = (flags and 0x04) != 0
+        
+        val tcpHeaderLen = ((packet[ipHeaderLen + 12].toInt() shr 4) and 0x0F) * 4
+        val payloadOffset = ipHeaderLen + tcpHeaderLen
+        val payloadLen = len - payloadOffset
+        
+        if (isRst) {
+            val session = activeTcpSessions.remove(sessionKey)
+            session?.close()
+            return
+        }
+        
+        var session = activeTcpSessions[sessionKey]
+        if (isSyn) {
+            if (session != null) {
+                session.close()
+            }
+            val newSession = TransparentTcpSession(
+                srcPort = srcPort,
+                destIpStr = destHost,
+                destPort = destPort,
+                clientIp = srcIp,
+                destIp = destIp,
+                outputStream = out,
+                vpnService = this
+            )
+            newSession.clientSeq = seq
+            newSession.state = TransparentTcpSession.SessionState.SYN_RECEIVED
+            activeTcpSessions[sessionKey] = newSession
+            
+            sendTcpPacket(
+                srcIp = destIp,
+                dstIp = srcIp,
+                srcPort = destPort,
+                dstPort = srcPort,
+                seq = newSession.serverSeq,
+                ack = newSession.clientSeq + 1,
+                flags = 0x12, // SYN | ACK
+                payload = null,
+                outputStream = out
+            )
+            newSession.serverSeq++
+            return
+        }
+        
+        if (session == null) {
+            sendTcpPacket(
+                srcIp = destIp,
+                dstIp = srcIp,
+                srcPort = destPort,
+                dstPort = srcPort,
+                seq = 0,
+                ack = seq + 1,
+                flags = 0x04, // RST
+                payload = null,
+                outputStream = out
+            )
+            return
+        }
+        
+        if (isFin) {
+            sendTcpPacket(
+                srcIp = destIp,
+                dstIp = srcIp,
+                srcPort = destPort,
+                dstPort = srcPort,
+                seq = session.serverSeq,
+                ack = seq + 1,
+                flags = 0x10, // ACK
+                payload = null,
+                outputStream = out
+            )
+            activeTcpSessions.remove(sessionKey)
+            session.close()
+            return
+        }
+        
+        if (isAck) {
+            if (session.state == TransparentTcpSession.SessionState.SYN_RECEIVED) {
+                session.state = TransparentTcpSession.SessionState.ESTABLISHED
+                session.clientSeq = seq
+                
+                Thread {
+                    try {
+                        val tunnel = connectToRemote(session.destIpStr, session.destPort)
+                        if (tunnel == null) {
+                            sendTcpPacket(
+                                srcIp = session.destIp,
+                                dstIp = session.clientIp,
+                                srcPort = session.destPort,
+                                dstPort = session.srcPort,
+                                seq = session.serverSeq,
+                                ack = session.clientSeq,
+                                flags = 0x04, // RST
+                                payload = null,
+                                outputStream = out
+                            )
+                            activeTcpSessions.remove(sessionKey)
+                            session.close()
+                            return@Thread
+                        }
+                        session.remoteTunnel = tunnel
+                        
+                        session.outboundJob = Thread {
+                            try {
+                                while (!Thread.currentThread().isInterrupted && session.state == TransparentTcpSession.SessionState.ESTABLISHED) {
+                                    val data = tunnel.receive() ?: break
+                                    if (data.isNotEmpty()) {
+                                        sendTcpPacket(
+                                            srcIp = session.destIp,
+                                            dstIp = session.clientIp,
+                                            srcPort = session.destPort,
+                                            dstPort = session.srcPort,
+                                            seq = session.serverSeq,
+                                            ack = session.clientSeq,
+                                            flags = 0x18, // PSH | ACK
+                                            payload = data,
+                                            outputStream = out
+                                        )
+                                        session.serverSeq += data.size
+                                    }
+                                }
+                            } catch (e: Exception) {
+                            } finally {
+                                if (activeTcpSessions[sessionKey] == session) {
+                                    sendTcpPacket(
+                                        srcIp = session.destIp,
+                                        dstIp = session.clientIp,
+                                        srcPort = session.destPort,
+                                        dstPort = session.srcPort,
+                                        seq = session.serverSeq,
+                                        ack = session.clientSeq,
+                                        flags = 0x11, // FIN | ACK
+                                        payload = null,
+                                        outputStream = out
+                                    )
+                                    activeTcpSessions.remove(sessionKey)
+                                }
+                                session.close()
+                            }
+                        }.apply { start() }
+                        
+                    } catch (e: Exception) {
+                        activeTcpSessions.remove(sessionKey)
+                        session.close()
+                    }
+                }.start()
+            }
+            
+            if (payloadLen > 0 && session.state == TransparentTcpSession.SessionState.ESTABLISHED) {
+                val payloadBytes = ByteArray(payloadLen)
+                System.arraycopy(packet, payloadOffset, payloadBytes, 0, payloadLen)
+                
+                Thread {
+                    try {
+                        val tunnel = session.remoteTunnel
+                        if (tunnel != null) {
+                            tunnel.send(payloadBytes, payloadLen)
+                            
+                            session.clientSeq = seq + payloadLen
+                            sendTcpPacket(
+                                srcIp = session.destIp,
+                                dstIp = session.clientIp,
+                                srcPort = session.destPort,
+                                dstPort = session.srcPort,
+                                seq = session.serverSeq,
+                                ack = session.clientSeq,
+                                flags = 0x10, // ACK
+                                payload = null,
+                                outputStream = out
+                            )
+                        }
+                    } catch (e: Exception) {
+                    }
+                }.start()
+            }
+        }
+    }
+
+    private fun sendTcpPacket(
+        srcIp: ByteArray,
+        dstIp: ByteArray,
+        srcPort: Int,
+        dstPort: Int,
+        seq: Long,
+        ack: Long,
+        flags: Int,
+        payload: ByteArray?,
+        outputStream: java.io.FileOutputStream
+    ) {
+        val payloadLen = payload?.size ?: 0
+        val tcpHeaderLen = 20
+        val ipHeaderLen = 20
+        val totalLen = ipHeaderLen + tcpHeaderLen + payloadLen
+        
+        val packet = ByteArray(totalLen)
+        
+        packet[0] = 0x45.toByte()
+        packet[1] = 0x00.toByte()
+        packet[2] = ((totalLen shr 8) and 0xFF).toByte()
+        packet[3] = (totalLen and 0xFF).toByte()
+        
+        packet[4] = 0x00.toByte()
+        packet[5] = 0x00.toByte()
+        
+        packet[6] = 0x40.toByte()
+        packet[7] = 0x00.toByte()
+        
+        packet[8] = 0x40.toByte()
+        packet[9] = 6.toByte()
+        
+        packet[10] = 0x00.toByte()
+        packet[11] = 0x00.toByte()
+        
+        System.arraycopy(srcIp, 0, packet, 12, 4)
+        System.arraycopy(dstIp, 0, packet, 16, 4)
+        
+        val ipChecksum = calculateChecksum(packet, ipHeaderLen)
+        packet[10] = ((ipChecksum shr 8) and 0xFF).toByte()
+        packet[11] = (ipChecksum and 0xFF).toByte()
+        
+        val t = ipHeaderLen
+        packet[t + 0] = ((srcPort shr 8) and 0xFF).toByte()
+        packet[t + 1] = (srcPort and 0xFF).toByte()
+        packet[t + 2] = ((dstPort shr 8) and 0xFF).toByte()
+        packet[t + 3] = (dstPort and 0xFF).toByte()
+        
+        packet[t + 4] = ((seq shr 24) and 0xFF).toByte()
+        packet[t + 5] = ((seq shr 16) and 0xFF).toByte()
+        packet[t + 6] = ((seq shr 8) and 0xFF).toByte()
+        packet[t + 7] = (seq and 0xFF).toByte()
+        
+        packet[t + 8] = ((ack shr 24) and 0xFF).toByte()
+        packet[t + 9] = ((ack shr 16) and 0xFF).toByte()
+        packet[t + 10] = ((ack shr 8) and 0xFF).toByte()
+        packet[t + 11] = (ack and 0xFF).toByte()
+        
+        packet[t + 12] = 0x50.toByte()
+        packet[t + 13] = flags.toByte()
+        
+        packet[t + 14] = 0xFF.toByte()
+        packet[t + 15] = 0xFF.toByte()
+        
+        packet[t + 16] = 0x00.toByte()
+        packet[t + 17] = 0x00.toByte()
+        
+        packet[t + 18] = 0x00.toByte()
+        packet[t + 19] = 0x00.toByte()
+        
+        if (payload != null && payloadLen > 0) {
+            System.arraycopy(payload, 0, packet, ipHeaderLen + tcpHeaderLen, payloadLen)
+        }
+        
+        val tcpChecksum = computeTcpChecksum(packet, ipHeaderLen, tcpHeaderLen + payloadLen, srcIp, dstIp)
+        packet[t + 16] = ((tcpChecksum shr 8) and 0xFF).toByte()
+        packet[t + 17] = (tcpChecksum and 0xFF).toByte()
+        
+        synchronized(outputStream) {
+            try {
+                outputStream.write(packet)
+                outputStream.flush()
+            } catch (e: Exception) {
+            }
+        }
+    }
+
+    private fun computeTcpChecksum(
+        packet: ByteArray,
+        ipHeaderLen: Int,
+        tcpLen: Int,
+        srcIp: ByteArray,
+        dstIp: ByteArray
+    ): Int {
+        val pseudoHeader = ByteArray(12 + tcpLen)
+        System.arraycopy(srcIp, 0, pseudoHeader, 0, 4)
+        System.arraycopy(dstIp, 0, pseudoHeader, 4, 4)
+        pseudoHeader[8] = 0.toByte()
+        pseudoHeader[9] = 6.toByte()
+        pseudoHeader[10] = ((tcpLen shr 8) and 0xFF).toByte()
+        pseudoHeader[11] = (tcpLen and 0xFF).toByte()
+        
+        System.arraycopy(packet, ipHeaderLen, pseudoHeader, 12, tcpLen)
+        
+        pseudoHeader[28] = 0.toByte()
+        pseudoHeader[29] = 0.toByte()
+        
+        var sum = 0
+        var i = 0
+        val len = pseudoHeader.size
+        while (i < len - 1) {
+            val word = ((pseudoHeader[i].toInt() and 0xFF) shl 8) or (pseudoHeader[i + 1].toInt() and 0xFF)
+            sum += word
+            i += 2
+        }
+        if (i < len) {
+            val word = (pseudoHeader[i].toInt() and 0xFF) shl 8
+            sum += word
+        }
+        while (sum shr 16 != 0) {
+            sum = (sum and 0xFFFF) + (sum shr 16)
+        }
+        return (sum.inv()) and 0xFFFF
     }
 
     // Local Dual Proxy Server
@@ -1062,3 +1412,34 @@ class MyVpnService : VpnService(), Runnable {
         }
     }
 }
+
+class TransparentTcpSession(
+    val srcPort: Int,
+    val destIpStr: String,
+    val destPort: Int,
+    val clientIp: ByteArray,
+    val destIp: ByteArray,
+    val outputStream: java.io.FileOutputStream,
+    val vpnService: MyVpnService
+) {
+    var clientSeq: Long = 0L
+    var serverSeq: Long = kotlin.random.Random.nextLong(1000, 1000000)
+    var state: SessionState = SessionState.CLOSED
+    var remoteTunnel: MyVpnService.RemoteTunnel? = null
+    var outboundJob: Thread? = null
+    
+    enum class SessionState {
+        CLOSED,
+        SYN_RECEIVED,
+        ESTABLISHED,
+        FIN_WAIT
+    }
+    
+    fun close() {
+        state = SessionState.CLOSED
+        outboundJob?.interrupt()
+        try { remoteTunnel?.close() } catch (e: Exception) {}
+        remoteTunnel = null
+    }
+}
+

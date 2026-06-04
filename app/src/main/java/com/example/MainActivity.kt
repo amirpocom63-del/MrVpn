@@ -62,6 +62,8 @@ class MainActivity : ComponentActivity() {
                 val pingMs by viewModel.pingMs.collectAsStateWithLifecycle()
                 val isPinging by viewModel.isPinging.collectAsStateWithLifecycle()
                 val networkSpeed by viewModel.networkSpeed.collectAsStateWithLifecycle()
+                val serverPings by viewModel.serverPings.collectAsStateWithLifecycle()
+                val isPingingAll by viewModel.isPingingAll.collectAsStateWithLifecycle()
 
                 var showAdminPanel by remember { mutableStateOf(false) }
                 var showPasscodeLock by remember { mutableStateOf(false) }
@@ -128,6 +130,10 @@ class MainActivity : ComponentActivity() {
                             ServerSelectorCard(
                                 selectedServer = selectedServer,
                                 servers = servers,
+                                serverPings = serverPings,
+                                isPingingAll = isPingingAll,
+                                onTestAllPings = { viewModel.testAllServerPings() },
+                                onSmartConnect = { viewModel.connectToBestServer() },
                                 onServerSelected = { viewModel.selectServer(it) },
                                 onManageAdminClick = { showPasscodeLock = true }
                             )

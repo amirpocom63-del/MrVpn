@@ -11,6 +11,9 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.List
@@ -31,6 +34,10 @@ import com.example.ui.theme.CyberCyan
 fun ServerSelectorCard(
     selectedServer: VpnServer?,
     servers: List<VpnServer>,
+    serverPings: Map<String, Int?>,
+    isPingingAll: Boolean,
+    onTestAllPings: () -> Unit,
+    onSmartConnect: () -> Unit,
     onServerSelected: (VpnServer) -> Unit,
     onManageAdminClick: () -> Unit,
     modifier: Modifier = Modifier
@@ -98,6 +105,50 @@ fun ServerSelectorCard(
 
         Spacer(modifier = Modifier.height(14.dp))
 
+        // Actions Panel: Test All Pings and Smart Connect
+        if (servers.isNotEmpty()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(bottom = 12.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onTestAllPings,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CyberCyan.copy(alpha = 0.12f),
+                        contentColor = CyberCyan
+                    ),
+                    modifier = Modifier.weight(1f).height(38.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    if (isPingingAll) {
+                        CircularProgressIndicator(
+                            color = CyberCyan,
+                            modifier = Modifier.size(16.dp),
+                            strokeWidth = 2.dp
+                        )
+                    } else {
+                        Text("تست پینگ همه", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                    }
+                }
+
+                Button(
+                    onClick = onSmartConnect,
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CyberCyan,
+                        contentColor = Color(0xFF070B19)
+                    ),
+                    modifier = Modifier.weight(1f).height(38.dp),
+                    shape = RoundedCornerShape(10.dp),
+                    contentPadding = PaddingValues(horizontal = 4.dp, vertical = 2.dp)
+                ) {
+                    Text("اتصال به بهترین", fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                }
+            }
+        }
+
         // Display beautiful list block of servers
         if (servers.isEmpty()) {
             Box(
@@ -160,6 +211,36 @@ fun ServerSelectorCard(
                                     fontSize = 10.sp,
                                     maxLines = 1,
                                     overflow = TextOverflow.Ellipsis
+                                )
+                            }
+                        }
+
+                        // Right side: Live ping score indicator badge
+                        val pingVal = serverPings[server.id]
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
+                        ) {
+                            if (pingVal == null) {
+                                Text(
+                                    text = "--",
+                                    color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.3f),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else if (pingVal < 0) {
+                                Text(
+                                    text = "خطا",
+                                    color = Color(0xFFFF3366),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
+                                )
+                            } else {
+                                Text(
+                                    text = "${pingVal}ms",
+                                    color = if (pingVal < 150) CyberCyan else Color(0xFFFFCC00),
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold
                                 )
                             }
                         }

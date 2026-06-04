@@ -47,6 +47,12 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
     private val _isPinging = MutableStateFlow(false)
     val isPinging: StateFlow<Boolean> = _isPinging.asStateFlow()
 
+    private val _serverPings = MutableStateFlow<Map<String, Int?>>(emptyMap())
+    val serverPings: StateFlow<Map<String, Int?>> = _serverPings.asStateFlow()
+
+    private val _isPingingAll = MutableStateFlow(false)
+    val isPingingAll: StateFlow<Boolean> = _isPingingAll.asStateFlow()
+
     // Real-time speed
     private val _networkSpeed = MutableStateFlow(NetworkSpeed(0f, 0f))
     val networkSpeed: StateFlow<NetworkSpeed> = _networkSpeed.asStateFlow()
@@ -163,6 +169,84 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
             val result = ConnectionSimulator.measurePing(host, port)
             _pingMs.value = result
             _isPinging.value = false
+        }
+    }
+
+    fun testAllServerPings() {
+        viewModelScope.launch {
+            _isPingingAll.value = true
+            val currentServers = servers.value
+            val pings = _serverPings.value.toMutableMap()
+            
+            currentServers.forEach { server ->
+                pings[server.id] = null
+            }
+            _serverPings.value = pings
+            
+            currentServers.forEach { server ->
+                var host = "188.114.97.6"
+                var port = 443
+                if (server.encryptedConfig.isNotEmpty() && server.encryptionKey.isNotEmpty()) {
+                    try {
+                        val rawUrl = CryptoUtils.decrypt(server.encryptedConfig, server.encryptionKey)
+                        val parsed = VlessConfig.parse(rawUrl)
+                        if (parsed != null) {
+                            host = parsed.address
+                            port = parsed.port
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+                val result = ConnectionSimulator.measurePing(host, port)
+                pings[server.id] = result
+                _serverPings.value = pings.toMap()
+            }
+            _isPingingAll.value = false
+        }
+    }
+
+    fun connectToBestServer() {
+        viewModelScope.launch {
+            _isPingingAll.value = true
+            val currentServers = servers.value
+            if (currentServers.isEmpty()) {
+                _isPingingAll.value = false
+                return@launch
+            }
+            
+            val pings = mutableMapOf<String, Int>()
+            currentServers.forEach { server ->
+                var host = "188.114.97.6"
+                var port = 443
+                if (server.encryptedConfig.isNotEmpty() && server.encryptionKey.isNotEmpty()) {
+                    try {
+                        val rawUrl = CryptoUtils.decrypt(server.encryptedConfig, server.encryptionKey)
+                        val parsed = VlessConfig.parse(rawUrl)
+                        if (parsed != null) {
+                            host = parsed.address
+                            port = parsed.port
+                        }
+                    } catch (e: Exception) {
+                        e.printStackTrace()
+                    }
+                }
+                val result = ConnectionSimulator.measurePing(host, port)
+                pings[server.id] = result
+                
+                val updatedMap = _serverPings.value.toMutableMap()
+                updatedMap[server.id] = result
+                _serverPings.value = updatedMap
+            }
+            
+            _isPingingAll.value = false
+            
+            val bestServerId = pings.minByOrNull { it.value }?.key
+            val bestServer = currentServers.find { it.id == bestServerId }
+            if (bestServer != null) {
+                selectServer(bestServer)
+                connectVpn()
+            }
         }
     }
 
