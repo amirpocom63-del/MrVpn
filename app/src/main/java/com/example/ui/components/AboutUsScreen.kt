@@ -32,7 +32,6 @@ fun AboutUsScreen(
     Column(
         modifier = modifier
             .fillMaxSize()
-            .background(Color(0xFF070B19)) // Deep cyberpunk dark blue gradient background
             .verticalScroll(scrollState)
             .padding(24.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

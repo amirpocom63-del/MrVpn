@@ -106,12 +106,38 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
 
-        // Hydrate initial defaults
+        // Hydrate initial defaults with robust persistent server selection recovery
         viewModelScope.launch {
             servers.collectLatest { list ->
-                if (list.isNotEmpty() && _selectedServer.value == null) {
-                    val defaultServer = list.find { it.isDefault } ?: list.first()
-                    _selectedServer.value = defaultServer
+                if (list.isNotEmpty()) {
+                    val savedId = sharedPrefs.getString("selected_server_id", "") ?: ""
+                    val savedName = sharedPrefs.getString("selected_server_name", "") ?: ""
+                    val currentSelected = _selectedServer.value
+                    
+                    if (currentSelected == null) {
+                        // Restore by ID or Name, otherwise fall back to default or first
+                        val matched = list.find { it.id == savedId }
+                            ?: list.find { it.name == savedName }
+                            ?: list.find { it.isDefault }
+                            ?: list.first()
+                        _selectedServer.value = matched
+                        sharedPrefs.edit()
+                            .putString("selected_server_id", matched.id)
+                            .putString("selected_server_name", matched.name)
+                            .apply()
+                    } else {
+                        // Make sure currently selected server still exists, otherwise recover gracefully
+                        val stillExists = list.any { it.id == currentSelected.id }
+                        if (!stillExists) {
+                            val matchedByName = list.find { it.name == currentSelected.name }
+                            val newSelect = matchedByName ?: list.find { it.isDefault } ?: list.first()
+                            _selectedServer.value = newSelect
+                            sharedPrefs.edit()
+                                .putString("selected_server_id", newSelect.id)
+                                .putString("selected_server_name", newSelect.name)
+                                .apply()
+                        }
+                    }
                 }
             }
         }
@@ -139,6 +165,12 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
     fun selectServer(server: VpnServer) {
         viewModelScope.launch {
             _selectedServer.value = server
+            // Persist the selection so it never resets or switches on exit/launch
+            sharedPrefs.edit()
+                .putString("selected_server_id", server.id)
+                .putString("selected_server_name", server.name)
+                .apply()
+            
             if (connectionState.value != VpnConnectionState.DISCONNECTED) {
                 // Reconnect to new server if currently connected
                 disconnectVpn()
@@ -411,7 +443,12 @@ class VpnViewModel(application: Application) : AndroidViewModel(application) {
                     val updatedList = vpnDao.getAllServersSync()
                     if (updatedList.isNotEmpty()) {
                         val matching = updatedList.find { it.name == currentSelectedName }
-                        _selectedServer.value = matching ?: updatedList.first()
+                        val finalSelection = matching ?: updatedList.first()
+                        _selectedServer.value = finalSelection
+                        sharedPrefs.edit()
+                            .putString("selected_server_id", finalSelection.id)
+                            .putString("selected_server_name", finalSelection.name)
+                            .apply()
                     }
                 } else {
                     throw Exception("فرمت کانفیگ‌ها در ساب پشتیبانی نمی‌شود.")

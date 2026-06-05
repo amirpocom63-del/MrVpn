@@ -72,23 +72,22 @@ class MainActivity : ComponentActivity() {
                 val isSyncingSubscription by viewModel.isSyncingSubscription.collectAsStateWithLifecycle()
                 val subscriptionSyncError by viewModel.subscriptionSyncError.collectAsStateWithLifecycle()
 
-                Scaffold(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(MaterialTheme.colorScheme.background),
-                    bottomBar = {
-                        TabNavigationBar(
-                            currentTab = currentTab,
-                            onTabSelected = { currentTab = it }
-                        )
-                    }
-                ) { innerPadding ->
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background)
-                            .padding(innerPadding)
-                    ) {
+                VpnAppBackground(isDark = isDarkTheme) {
+                    Scaffold(
+                        modifier = Modifier.fillMaxSize(),
+                        containerColor = Color.Transparent,
+                        bottomBar = {
+                            TabNavigationBar(
+                                currentTab = currentTab,
+                                onTabSelected = { currentTab = it }
+                            )
+                        }
+                    ) { innerPadding ->
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(innerPadding)
+                        ) {
                         if (currentTab == AppTab.HOME) {
                             // Main Dashboard Client Surface
                             Column(
@@ -191,4 +190,5 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
+}
 }
